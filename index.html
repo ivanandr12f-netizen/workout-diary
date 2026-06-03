@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Дневник тренировок (GitHub Cloud)</title>
+    <title>Дневник тренировок (Надежное сохранение)</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 0 20px; background-color: #f4f4f9; }
         h1, h2 { color: #333; }
@@ -11,33 +11,38 @@
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
-        button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        button:hover:not(:disabled) { background-color: #218838; }
+        button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-right: 5px; margin-bottom: 5px; }
+        button:hover { background-color: #218838; }
         table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; margin-top: 15px; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
         th { background-color: #007bff; color: white; }
         tr:hover { background-color: #f1f1f1; }
-        .status-box { background: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; color: #0d47a1; font-weight: bold; display: none; }
+        .backup-box { background: #eee; padding: 15px; border-radius: 8px; margin-top: 25px; border: 1px solid #ccc; }
+        .backup-box h3 { margin-top: 0; color: #444; }
+        .btn-blue { background-color: #007bff; }
+        .btn-blue:hover { background-color: #0056b3; }
+        .btn-orange { background-color: #ff9800; }
+        .btn-orange:hover { background-color: #e68a00; }
+        .btn-red { background-color: #dc3545; }
+        .btn-red:hover { background-color: #c82333; }
         .delete-btn { background: none; border: none; color: #dc3545; cursor: pointer; font-size: 16px; padding: 0; }
         .delete-btn:hover { color: #bd2130; font-weight: bold; }
-        .clear-all-btn { background-color: #dc3545; margin-top: 20px; font-size: 14px; padding: 8px 12px; }
-        .clear-all-btn:hover:not(:disabled) { background-color: #c82333; }
+        #fileInput { display: none; }
+        .storage-status { font-size: 12px; color: #666; margin-top: -10px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
-    <h1>🏋️‍♂️ Мой дневник тренировок (Авто-сохранение)</h1>
+    <h1>🏋️‍♂️ Мой дневник тренировок</h1>
+    <div id="storageStatus" class="storage-status">⏳ Проверка защиты памяти...</div>
     
-    <div id="statusMessage" class="status-box"></div>
-
     <form id="workoutForm">
         <div class="form-group"><label>Дата:</label><input type="date" id="date" required></div>
         <div class="form-group"><label>Упражнение:</label><input type="text" id="exercise" placeholder="Например: Становая тяга" required></div>
         <div class="form-group"><label>Вес (кг):</label><input type="number" id="weight" step="0.1" required></div>
         <div class="form-group"><label>Подходы:</label><input type="number" id="sets" required></div>
         <div class="form-group"><label>Повторения:</label><input type="number" id="reps" required></div>
-        <button type="submit" id="submitBtn">Добавить и отправить в облако</button>
+        <button type="submit">Сохранить тренировку</button>
     </form>
 
     <h2>📋 История тренировок</h2>
@@ -48,76 +53,47 @@
         <tbody id="workoutLog"></tbody>
     </table>
 
-    <button id="clearAllBtn" class="clear-all-btn">🗑️ Очистить всю историю</button>
+    <div class="backup-box">
+        <h3>💾 Управление данными дневника</h3>
+        <button class="btn-blue" id="exportBtn">📥 Скачать бэкап тренировок (.txt)</button>
+        <button class="btn-orange" onclick="document.getElementById('fileInput').click()">📤 Восстановить из файла</button>
+        <input type="file" id="fileInput" accept=".txt">
+        <button class="btn-red" id="clearBtn">🗑️ Стереть всё</button>
+    </div>
 
     <script>
-        // Трюк против защитных сканеров: склеиваем токен из двух частей
-        const part1 = "ghp_ywBWCEZhQ1LA718sHwb";
-        const part2 = "bIOyeSZ8j412KWHZl";
-        const GITHUB_TOKEN = part1 + part2;
-
-        const REPO_OWNER = "ivanandr12f-netizen";   
-        const REPO_NAME = "workout-diary";  
-        const FILE_PATH = "workouts_data.json"; 
-
         const workoutForm = document.getElementById('workoutForm');
         const workoutLog = document.getElementById('workoutLog');
-        const submitBtn = document.getElementById('submitBtn');
-        const clearAllBtn = document.getElementById('clearAllBtn');
-        const statusMessage = document.getElementById('statusMessage');
-
-        let currentFileSha = null; 
-        let workoutsArray = [];
+        const fileInput = document.getElementById('fileInput');
+        const storageStatus = document.getElementById('storageStatus');
 
         document.getElementById('date').valueAsDate = new Date();
 
-        function showStatus(text, duration = 3000) {
-            statusMessage.innerText = text;
-            statusMessage.style.display = 'block';
-            if(duration) setTimeout(() => statusMessage.style.display = 'none', duration);
-        }
-
-        // Скачивание базы из GitHub
-        async function loadFromGitHub() {
-            showStatus("⏳ Синхронизация с GitHub...", 0);
-            submitBtn.disabled = true;
-            clearAllBtn.disabled = true;
-            
-            const url = `https://github.com{REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
-            
-            try {
-                const response = await fetch(url, {
-                    headers: { "Authorization": `token ${GITHUB_TOKEN}` }
-                });
-                
-                if (response.status === 200) {
-                    const data = await response.json();
-                    currentFileSha = data.sha; 
-                    const utf8String = decodeURIComponent(atob(data.content).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
-                    workoutsArray = JSON.parse(utf8String);
-                } else if (response.status === 404) {
-                    workoutsArray = [];
-                    currentFileSha = null;
+        // КОСТЫЛЬ ДЛЯ ЗАЩИТЫ ОТ АВТО-ОЧИСТКИ КЭША
+        async function requestPersistentStorage() {
+            if (navigator.storage && navigator.storage.persist) {
+                const isPersisted = await navigator.storage.persisted();
+                if (!isPersisted) {
+                    const req = await navigator.storage.persist();
+                    if (req) {
+                        storageStatus.innerText = "🔒 Память защищена: устройство не сможет удалить данные автоматически.";
+                    } else {
+                        storageStatus.innerText = "⚠️ Память обычная: данные могут быть стерты при полной нехватке места на телефоне.";
+                    }
+                } else {
+                    storageStatus.innerText = "🔒 Память защищена: устройство не сможет удалить данные автоматически.";
                 }
-                
-                renderTable();
-                showStatus("✅ Данные синхронизированы!");
-            } catch (error) {
-                console.error(error);
-                showStatus("❌ Ошибка синхронизации.");
-            } finally {
-                submitBtn.disabled = false;
-                clearAllBtn.disabled = false;
+            } else {
+                storageStatus.innerText = "⚠️ Браузер не поддерживает постоянную защиту памяти.";
             }
         }
 
-        // Отрисовка таблицы
-        function renderTable() {
+        function loadWorkouts() {
             workoutLog.innerHTML = '';
-            const indexedWorkouts = workoutsArray.map((w, index) => ({ ...w, originalIndex: index }));
-            indexedWorkouts.sort((a, b) => new Date(b.date) - new Date(a.date));
+            const workouts = JSON.parse(localStorage.getItem('workouts_local_db')) || [];
+            workouts.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-            indexedWorkouts.forEach(w => {
+            workouts.forEach((w, index) => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${new Date(w.date).toLocaleDateString('ru-RU')}</td>
@@ -125,99 +101,74 @@
                     <td>${w.weight} кг</td>
                     <td>${w.sets}</td>
                     <td>${w.reps}</td>
-                    <td><button class="delete-btn" onclick="deleteWorkout(${w.originalIndex})">❌</button></td>
+                    <td><button class="delete-btn" onclick="deleteWorkout(${index})">❌</button></td>
                 `;
                 workoutLog.appendChild(row);
             });
         }
 
-        // Удаление одной записи
-        async function deleteWorkout(index) {
-            if (confirm("Вы уверены, что хотите удалить эту запись?")) {
-                workoutsArray.splice(index, 1); 
-                renderTable(); 
-                await saveToGitHub(); 
-            }
-        }
-
-        // Полная очистка
-        clearAllBtn.addEventListener('click', async function() {
-            if (confirm("Вы уверены, что хотите ПОЛНОСТЬЮ очистить всю историю тренировок?")) {
-                workoutsArray = [];
-                renderTable();
-                await saveToGitHub();
-            }
-        });
-
-        // Отправка обновленной базы обратно на GitHub
-        async function saveToGitHub() {
-            submitBtn.disabled = true;
-            clearAllBtn.disabled = true;
-            showStatus("📡 Сохранение в облако GitHub...", 0);
-
-            const url = `https://github.com{REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
-            
-            const rawJsonString = JSON.stringify(workoutsArray, null, 2);
-            const base64Content = btoa(encodeURIComponent(rawJsonString).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
-
-            const bodyData = {
-                message: "🏋️‍♂️ Дневник тренировок: обновление данных через веб-интерфейс",
-                content: base64Content
-            };
-
-            if (currentFileSha) {
-                bodyData.sha = currentFileSha;
-            }
-
-            try {
-                const response = await fetch(url, {
-                    method: "PUT",
-                    headers: {
-                        "Authorization": `token ${GITHUB_TOKEN}`,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify(bodyData)
-                });
-
-                if (response.ok) {
-                    const result = await response.json();
-                    currentFileSha = result.content.sha; 
-                    showStatus("🚀 Успешно сохранено в ваш репозиторий!");
-                } else {
-                    showStatus("❌ Ошибка отправки запроса.");
-                }
-            } catch (error) {
-                console.error(error);
-                showStatus("❌ Сетевая ошибка сохранения.");
-            } finally {
-                submitBtn.disabled = false;
-                clearAllBtn.disabled = false;
-            }
-        }
-
-        // Обработчик формы
-        workoutForm.addEventListener('submit', async function(e) {
+        workoutForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            
-            const newWorkout = {
+            const workouts = JSON.parse(localStorage.getItem('workouts_local_db')) || [];
+            workouts.push({
                 date: document.getElementById('date').value,
                 exercise: document.getElementById('exercise').value,
                 weight: document.getElementById('weight').value,
                 sets: document.getElementById('sets').value,
                 reps: document.getElementById('reps').value
-            };
-
-            workoutsArray.push(newWorkout);
-            renderTable();
-            
+            });
+            localStorage.setItem('workouts_local_db', JSON.stringify(workouts));
+            loadWorkouts();
             workoutForm.reset();
             document.getElementById('date').valueAsDate = new Date();
-
-            await saveToGitHub();
         });
 
-        // Запуск при старте страницы
-        loadFromGitHub();
+        window.deleteWorkout = function(index) {
+            if (confirm("Вы уверены, что хотите удалить эту запись?")) {
+                const workouts = JSON.parse(localStorage.getItem('workouts_local_db')) || [];
+                workouts.sort((a, b) => new Date(b.date) - new Date(a.date));
+                workouts.splice(index, 1);
+                localStorage.setItem('workouts_local_db', JSON.stringify(workouts));
+                loadWorkouts();
+            }
+        };
+
+        document.getElementById('clearBtn').addEventListener('click', function() {
+            if (confirm("Вы действительно хотите удалить абсолютно всю историю тренировок?")) {
+                localStorage.removeItem('workouts_local_db');
+                loadWorkouts();
+            }
+        });
+
+        document.getElementById('exportBtn').addEventListener('click', function() {
+            const dataStr = localStorage.getItem('workouts_local_db') || "[]";
+            if (dataStr === "[]") { alert("Дневник пока пуст."); return; }
+            const blob = new Blob([dataStr], { type: "text/plain;charset=utf-8" });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'мои_тренировки.txt';
+            link.click();
+        });
+
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files;
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (Array.isArray(importedData)) {
+                        localStorage.setItem('workouts_local_db', JSON.stringify(importedData));
+                        loadWorkouts();
+                        alert('Все тренировки успешно восстановлены!');
+                    } else { alert('Ошибка формата.'); }
+                } catch(err) { alert('Ошибка чтения.'); }
+            };
+            reader.readAsText(file);
+        });
+
+        loadWorkouts();
+        requestPersistentStorage(); // Включаем защиту памяти при старте
     </script>
 </body>
 </html>
