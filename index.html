@@ -45,10 +45,10 @@
     </table>
 
     <script>
-        // НАСТРОЙКА ДАННЫХ GITHUB
+        // НАСТРОЙКА ДАННЫХ GITHUB (Данные обновлены)
         const GITHUB_TOKEN = "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"; 
-        const REPO_OWNER = "Dmitriy-Zg";   
-        const REPO_NAME = "fitnes-dnevnik";  
+        const REPO_OWNER = "ivanandr12f-netizen";   
+        const REPO_NAME = "workout-diary";  
         const FILE_PATH = "workouts_data.json"; 
 
         const workoutForm = document.getElementById('workoutForm');
@@ -93,7 +93,7 @@
                 showStatus("✅ Данные синхронизированы!");
             } catch (error) {
                 console.error(error);
-                showStatus("❌ Ошибка синхронизации. Проверьте правильность токена.");
+                showStatus("❌ Ошибка синхронизации. Проверьте видимость репозитория (должен быть Public) и токен.");
             } finally {
                 submitBtn.disabled = false;
             }
