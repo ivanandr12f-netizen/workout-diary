@@ -67,161 +67,166 @@
         <tbody id="workoutLog"></tbody>
     </table>
  <script>
-        // Ваша точная ссылка на Google Web App без опечаток
-        const GOOGLE_SCRIPT_URL = "https://google.com"; 
+    // Поменяйте эту ссылку на вашу реальную ссылку Web App (должна заканчиваться на /exec)
+    const GOOGLE_SCRIPT_URL = "https://google.com"; 
 
-        const workoutForm = document.getElementById('workoutForm');
-        const workoutLog = document.getElementById('workoutLog');
-        const exerciseSelect = document.getElementById('exerciseSelect');
-        const addExerciseBtn = document.getElementById('addExerciseBtn');
-        const newExerciseName = document.getElementById('newExerciseName');
-        const submitBtn = document.getElementById('submitBtn');
-        const statusMessage = document.getElementById('statusMessage');
+    const workoutForm = document.getElementById('workoutForm');
+    const workoutLog = document.getElementById('workoutLog');
+    const exerciseSelect = document.getElementById('exerciseSelect');
+    const addExerciseBtn = document.getElementById('addExerciseBtn');
+    const newExerciseName = document.getElementById('newExerciseName');
+    const submitBtn = document.getElementById('submitBtn');
+    const statusMessage = document.getElementById('statusMessage');
 
-        let workoutsArray = [];
-        document.getElementById('date').valueAsDate = new Date();
+    let workoutsArray = [];
+    document.getElementById('date').valueAsDate = new Date();
 
-        function showStatus(text, duration = 3000) {
-            statusMessage.innerText = text;
-            statusMessage.style.display = 'block';
-            if(duration) setTimeout(() => statusMessage.style.display = 'none', duration);
-        }
+    function showStatus(text, duration = 3000) {
+        statusMessage.innerText = text;
+        statusMessage.style.display = 'block';
+        if(duration) setTimeout(() => statusMessage.style.display = 'none', duration);
+    }
 
-        // Загрузка всех данных из Google
-        async function loadFromGoogle() {
-            showStatus("⏳ Синхронизация с Google...", 0);
-            submitBtn.disabled = true;
-            addExerciseBtn.disabled = true;
+    // 1. Загрузка всех данных из Google
+    async function loadFromGoogle() {
+        showStatus("⏳ Синхронизация с Google...", 0);
+        submitBtn.disabled = true;
+        addExerciseBtn.disabled = true;
+        
+        try {
+            const response = await fetch(GOOGLE_SCRIPT_URL);
+            if (!response.ok) throw new Error("Ошибка сервера");
             
-            try {
-                const response = await fetch(GOOGLE_SCRIPT_URL);
-                const resData = await response.json();
-                
-                workoutsArray = resData.workouts;
-                renderTable();
-                renderExercises(resData.exercises);
-                
-                showStatus("✅ Данные обновлены!");
-            } catch (error) {
-                console.error(error);
-                showStatus("❌ Ошибка синхронизации. Проверьте настройки.");
-            } finally {
-                submitBtn.disabled = false;
-                addExerciseBtn.disabled = false;
-            }
-        }
-
-        // Заполнение выпадающего списка упражнений
-        function renderExercises(exercises) {
-            exerciseSelect.innerHTML = '';
-            if (exercises.length === 0) {
-                exerciseSelect.innerHTML = '<option value="" disabled selected>Список пуст. Добавьте упражнение выше!</option>';
-                return;
-            }
+            const resData = await response.json();
             
-            exerciseSelect.innerHTML = '<option value="" disabled selected>-- Выберите из списка --</option>';
-            exercises.forEach(ex => {
-                const opt = document.createElement('option');
-                opt.value = ex;
-                opt.innerText = ex;
-                exerciseSelect.appendChild(opt);
-            });
-        }
-
-        // Отрисовка таблицы
-        function renderTable() {
-            workoutLog.innerHTML = '';
-            const sorted = [...workoutsArray].sort((a, b) => new Date(b.date) - new Date(a.date));
-            sorted.forEach(w => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${new Date(w.date).toLocaleDateString('ru-RU')}</td>
-                    <td>${w.exercise}</td>
-                    <td>${w.weight} кг</td>
-                    <td>${w.sets}</td>
-                    <td>${w.reps}</td>
-                    <td><button class="delete-btn" onclick="deleteWorkout(${w.rowId})">❌</button></td>
-                `;
-                workoutLog.appendChild(row);
-            });
-        }
-
-        // Создание НОВОГО упражнения в списке
-        addExerciseBtn.addEventListener('click', async function() {
-            const name = newExerciseName.value.trim();
-            if (!name) { alert("Введите название упражнения!"); return; }
+            workoutsArray = resData.workouts || [];
+            renderTable();
+            renderExercises(resData.exercises || []);
             
-            addExerciseBtn.disabled = true;
-            showStatus("📡 Добавление упражнения в базу...", 0);
-            
-            try {
-                await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'add_exercise', name: name })
-                });
-                showStatus("🚀 Упражнение создано!");
-                newExerciseName.value = '';
-                setTimeout(loadFromGoogle, 1500);
-            } catch (error) {
-                showStatus("❌ Ошибка добавления упражнения.");
-                addExerciseBtn.disabled = false;
-            }
+            showStatus("✅ Данные обновлены!");
+        } catch (error) {
+            console.error("Ошибка загрузки:", error);
+            showStatus("❌ Ошибка синхронизации. Проверьте адрес скрипта или доступ.");
+            exerciseSelect.innerHTML = '<option value="" disabled selected>❌ Ошибка загрузки списка</option>';
+        } finally {
+            submitBtn.disabled = false;
+            addExerciseBtn.disabled = false;
+        }
+    }
+
+    // 2. Заполнение выпадающего списка упражнений
+    function renderExercises(exercises) {
+        exerciseSelect.innerHTML = '';
+        if (exercises.length === 0) {
+            exerciseSelect.innerHTML = '<option value="" disabled selected>Список пуст. Добавьте упражнение выше!</option>';
+            return;
+        }
+        
+        exerciseSelect.innerHTML = '<option value="" disabled selected>-- Выберите из списка --</option>';
+        exercises.forEach(ex => {
+            const opt = document.createElement('option');
+            opt.value = ex;
+            opt.innerText = ex;
+            exerciseSelect.appendChild(opt);
         });
+    }
 
-        // Отправка тренировки
-        workoutForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            submitBtn.disabled = true;
-            showStatus("📡 Отправка записи в Google...", 0);
-
-            const newWorkout = {
-                action: 'add',
-                date: document.getElementById('date').value,
-                exercise: exerciseSelect.value,
-                weight: document.getElementById('weight').value,
-                sets: document.getElementById('sets').value,
-                reps: document.getElementById('reps').value
-            };
-
-            try {
-                await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newWorkout)
-                });
-                showStatus("🚀 Успешно добавлено!");
-                workoutForm.reset();
-                document.getElementById('date').valueAsDate = new Date();
-                setTimeout(loadFromGoogle, 1500);
-            } catch (error) {
-                showStatus("❌ Ошибка отправки.");
-                submitBtn.disabled = false;
-            }
+    // 3. Отрисовка таблицы истории
+    function renderTable() {
+        workoutLog.innerHTML = '';
+        const sorted = [...workoutsArray].sort((a, b) => new Date(b.date) - new Date(a.date));
+        sorted.forEach(w => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${w.date ? new Date(w.date).toLocaleDateString('ru-RU') : '—'}</td>
+                <td>${w.exercise}</td>
+                <td>${w.weight} кг</td>
+                <td>${w.sets}</td>
+                <td>${w.reps}</td>
+                <td><button class="delete-btn" onclick="deleteWorkout(${w.rowId})">❌</button></td>
+            `;
+            workoutLog.appendChild(row);
         });
+    }
 
-        // Удаление записи
-        window.deleteWorkout = async function(rowId) {
-            if (confirm("Вы уверены, что хотите удалить эту строку?")) {
-                showStatus("🗑️ Удаление строки...", 0);
-                try {
-                    await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'delete', rowId: rowId })
-                    });
-                    showStatus("✅ Запись удалена!");
-                    setTimeout(loadFromGoogle, 1500);
-                } catch (error) {
-                    showStatus("❌ Ошибка удаления.");
-                }
-            }
+    // 4. Создание НОВОГО упражнения в списке
+    addExerciseBtn.addEventListener('click', async function() {
+        const name = newExerciseName.value.trim();
+        if (!name) { alert("Введите название упражнения!"); return; }
+        
+        addExerciseBtn.disabled = true;
+        showStatus("📡 Добавление упражнения в базу...", 0);
+        
+        try {
+            // Отправляем как текст, чтобы обойти CORS-блокировку браузера
+            await fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'add_exercise', name: name })
+            });
+            showStatus("🚀 Упражнение создано!");
+            newExerciseName.value = '';
+            await loadFromGoogle(); // Сразу обновляем список упражнений
+        } catch (error) {
+            showStatus("❌ Ошибка добавления упражнения.");
+            addExerciseBtn.disabled = false;
+        }
+    });
+
+    // 5. Отправка тренировки
+    workoutForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        if (!exerciseSelect.value) {
+            alert("Пожалуйста, выберите упражнение из списка!");
+            return;
+        }
+
+        submitBtn.disabled = true;
+        showStatus("📡 Отправка записи в Google...", 0);
+
+        const newWorkout = {
+            action: 'add',
+            date: document.getElementById('date').value,
+            exercise: exerciseSelect.value,
+            weight: document.getElementById('weight').value,
+            sets: document.getElementById('sets').value,
+            reps: document.getElementById('reps').value
         };
 
-        loadFromGoogle();
-    </script>
+        try {
+            await fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify(newWorkout)
+            });
+            showStatus("🚀 Успешно добавлено!");
+            workoutForm.reset();
+            document.getElementById('date').valueAsDate = new Date();
+            await loadFromGoogle(); // Обновляем таблицу
+        } catch (error) {
+            showStatus("❌ Ошибка отправки.");
+            submitBtn.disabled = false;
+        }
+    });
+
+    // 6. Удаление записи
+    window.deleteWorkout = async function(rowId) {
+        if (confirm("Вы уверены, что хотите удалить эту строку?")) {
+            showStatus("🗑️ Удаление строки...", 0);
+            try {
+                await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'delete', rowId: rowId })
+                });
+                showStatus("✅ Запись удалена!");
+                await loadFromGoogle(); // Перерисовываем таблицу с новыми ID строк
+            } catch (error) {
+                showStatus("❌ Ошибка удаления.");
+            }
+        }
+    };
+
+    // Запуск приложения
+    loadFromGoogle();
+</script>
 </body>
 </html>
