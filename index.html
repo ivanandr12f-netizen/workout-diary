@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Дневник тренировок (Надежное сохранение)</title>
+    <title>Дневник тренировок (Google Cloud)</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 0 20px; background-color: #f4f4f9; }
         h1, h2 { color: #333; }
@@ -11,38 +11,31 @@
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-right: 5px; margin-bottom: 5px; }
-        button:hover { background-color: #218838; }
+        button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        button:hover:not(:disabled) { background-color: #218838; }
         table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; margin-top: 15px; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
         th { background-color: #007bff; color: white; }
         tr:hover { background-color: #f1f1f1; }
-        .backup-box { background: #eee; padding: 15px; border-radius: 8px; margin-top: 25px; border: 1px solid #ccc; }
-        .backup-box h3 { margin-top: 0; color: #444; }
-        .btn-blue { background-color: #007bff; }
-        .btn-blue:hover { background-color: #0056b3; }
-        .btn-orange { background-color: #ff9800; }
-        .btn-orange:hover { background-color: #e68a00; }
-        .btn-red { background-color: #dc3545; }
-        .btn-red:hover { background-color: #c82333; }
+        .status-box { background: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; color: #0d47a1; font-weight: bold; display: none; }
         .delete-btn { background: none; border: none; color: #dc3545; cursor: pointer; font-size: 16px; padding: 0; }
         .delete-btn:hover { color: #bd2130; font-weight: bold; }
-        #fileInput { display: none; }
-        .storage-status { font-size: 12px; color: #666; margin-top: -10px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
-    <h1>🏋️‍♂️ Мой дневник тренировок</h1>
-    <div id="storageStatus" class="storage-status">⏳ Проверка защиты памяти...</div>
+    <h1>🏋️‍♂️ Мой дневник тренировок (Google Cloud)</h1>
     
+    <div id="statusMessage" class="status-box"></div>
+
     <form id="workoutForm">
         <div class="form-group"><label>Дата:</label><input type="date" id="date" required></div>
-        <div class="form-group"><label>Упражнение:</label><input type="text" id="exercise" placeholder="Например: Становая тяга" required></div>
+        <div class="form-group"><label>Упражнение:</label><input type="text" id="exercise" placeholder="Например: Приседания" required></div>
         <div class="form-group"><label>Вес (кг):</label><input type="number" id="weight" step="0.1" required></div>
         <div class="form-group"><label>Подходы:</label><input type="number" id="sets" required></div>
         <div class="form-group"><label>Повторения:</label><input type="number" id="reps" required></div>
-        <button type="submit">Сохранить тренировку</button>
+        <button type="submit" id="submitBtn">Добавить в Google Таблицу</button>
     </form>
 
     <h2>📋 История тренировок</h2>
@@ -53,47 +46,48 @@
         <tbody id="workoutLog"></tbody>
     </table>
 
-    <div class="backup-box">
-        <h3>💾 Управление данными дневника</h3>
-        <button class="btn-blue" id="exportBtn">📥 Скачать бэкап тренировок (.txt)</button>
-        <button class="btn-orange" onclick="document.getElementById('fileInput').click()">📤 Восстановить из файла</button>
-        <input type="file" id="fileInput" accept=".txt">
-        <button class="btn-red" id="clearBtn">🗑️ Стереть всё</button>
-    </div>
-
     <script>
+        // Ваша точная ссылка на Google Веб-приложение без опечаток
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyx1lF_uTsLrlD3HyirKnat11E1ZIBWUVrHnViGjq3Bnt5MI-NII4cHOmop3_lBa5QdcA/exec"; 
+
         const workoutForm = document.getElementById('workoutForm');
         const workoutLog = document.getElementById('workoutLog');
-        const fileInput = document.getElementById('fileInput');
-        const storageStatus = document.getElementById('storageStatus');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusMessage = document.getElementById('statusMessage');
 
+        let workoutsArray = [];
         document.getElementById('date').valueAsDate = new Date();
 
-        // КОСТЫЛЬ ДЛЯ ЗАЩИТЫ ОТ АВТО-ОЧИСТКИ КЭША
-        async function requestPersistentStorage() {
-            if (navigator.storage && navigator.storage.persist) {
-                const isPersisted = await navigator.storage.persisted();
-                if (!isPersisted) {
-                    const req = await navigator.storage.persist();
-                    if (req) {
-                        storageStatus.innerText = "🔒 Память защищена: устройство не сможет удалить данные автоматически.";
-                    } else {
-                        storageStatus.innerText = "⚠️ Память обычная: данные могут быть стерты при полной нехватке места на телефоне.";
-                    }
-                } else {
-                    storageStatus.innerText = "🔒 Память защищена: устройство не сможет удалить данные автоматически.";
-                }
-            } else {
-                storageStatus.innerText = "⚠️ Браузер не поддерживает постоянную защиту памяти.";
+        function showStatus(text, duration = 3000) {
+            statusMessage.innerText = text;
+            statusMessage.style.display = 'block';
+            if(duration) setTimeout(() => statusMessage.style.display = 'none', duration);
+        }
+
+        // 1. Получение данных из Google Таблицы
+        async function loadFromGoogle() {
+            showStatus("⏳ Синхронизация с Google Таблицами...", 0);
+            submitBtn.disabled = true;
+            
+            try {
+                const response = await fetch(GOOGLE_SCRIPT_URL);
+                workoutsArray = await response.json();
+                renderTable();
+                showStatus("✅ Данные обновлены!");
+            } catch (error) {
+                console.error(error);
+                showStatus("❌ Данные в таблице пока отсутствуют. Добавьте первую запись.");
+            } finally {
+                submitBtn.disabled = false;
             }
         }
 
-        function loadWorkouts() {
+        // Отрисовка таблицы на экране
+        function renderTable() {
             workoutLog.innerHTML = '';
-            const workouts = JSON.parse(localStorage.getItem('workouts_local_db')) || [];
-            workouts.sort((a, b) => new Date(b.date) - new Date(a.date));
+            const sorted = [...workoutsArray].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-            workouts.forEach((w, index) => {
+            sorted.forEach(w => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${new Date(w.date).toLocaleDateString('ru-RU')}</td>
@@ -101,74 +95,69 @@
                     <td>${w.weight} кг</td>
                     <td>${w.sets}</td>
                     <td>${w.reps}</td>
-                    <td><button class="delete-btn" onclick="deleteWorkout(${index})">❌</button></td>
+                    <td><button class="delete-btn" onclick="deleteWorkout(${w.rowId})">❌</button></td>
                 `;
                 workoutLog.appendChild(row);
             });
         }
 
-        workoutForm.addEventListener('submit', function(e) {
+        // 2. Добавление новой тренировки
+        workoutForm.addEventListener('submit', async function(e) {
             e.preventDefault();
-            const workouts = JSON.parse(localStorage.getItem('workouts_local_db')) || [];
-            workouts.push({
+            submitBtn.disabled = true;
+            showStatus("📡 Отправка записи в Google...", 0);
+
+            const newWorkout = {
+                action: 'add',
                 date: document.getElementById('date').value,
                 exercise: document.getElementById('exercise').value,
                 weight: document.getElementById('weight').value,
                 sets: document.getElementById('sets').value,
                 reps: document.getElementById('reps').value
-            });
-            localStorage.setItem('workouts_local_db', JSON.stringify(workouts));
-            loadWorkouts();
-            workoutForm.reset();
-            document.getElementById('date').valueAsDate = new Date();
+            };
+
+            try {
+                await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newWorkout)
+                });
+                
+                showStatus("🚀 Успешно добавлено!");
+                workoutForm.reset();
+                document.getElementById('date').valueAsDate = new Date();
+                
+                // Ждем сохранения и обновляем таблицу
+                setTimeout(loadFromGoogle, 1500);
+            } catch (error) {
+                showStatus("❌ Ошибка отправки данных.");
+                submitBtn.disabled = false;
+            }
         });
 
-        window.deleteWorkout = function(index) {
-            if (confirm("Вы уверены, что хотите удалить эту запись?")) {
-                const workouts = JSON.parse(localStorage.getItem('workouts_local_db')) || [];
-                workouts.sort((a, b) => new Date(b.date) - new Date(a.date));
-                workouts.splice(index, 1);
-                localStorage.setItem('workouts_local_db', JSON.stringify(workouts));
-                loadWorkouts();
+        // 3. Удаление строки
+        window.deleteWorkout = async function(rowId) {
+            if (confirm("Вы уверены, что хотите удалить эту строку из Google Таблицы?")) {
+                showStatus("🗑️ Удаление строки...", 0);
+                try {
+                    await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'delete', rowId: rowId })
+                    });
+                    showStatus("✅ Запись удалена!");
+                    setTimeout(loadFromGoogle, 1500);
+                } catch (error) {
+                    showStatus("❌ Ошибка удаления.");
+                }
             }
         };
 
-        document.getElementById('clearBtn').addEventListener('click', function() {
-            if (confirm("Вы действительно хотите удалить абсолютно всю историю тренировок?")) {
-                localStorage.removeItem('workouts_local_db');
-                loadWorkouts();
-            }
-        });
-
-        document.getElementById('exportBtn').addEventListener('click', function() {
-            const dataStr = localStorage.getItem('workouts_local_db') || "[]";
-            if (dataStr === "[]") { alert("Дневник пока пуст."); return; }
-            const blob = new Blob([dataStr], { type: "text/plain;charset=utf-8" });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = 'мои_тренировки.txt';
-            link.click();
-        });
-
-        fileInput.addEventListener('change', function(e) {
-            const file = e.target.files;
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const importedData = JSON.parse(e.target.result);
-                    if (Array.isArray(importedData)) {
-                        localStorage.setItem('workouts_local_db', JSON.stringify(importedData));
-                        loadWorkouts();
-                        alert('Все тренировки успешно восстановлены!');
-                    } else { alert('Ошибка формата.'); }
-                } catch(err) { alert('Ошибка чтения.'); }
-            };
-            reader.readAsText(file);
-        });
-
-        loadWorkouts();
-        requestPersistentStorage(); // Включаем защиту памяти при старте
+        // Запуск
+        loadFromGoogle();
     </script>
 </body>
 </html>
+
