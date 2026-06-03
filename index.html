@@ -7,10 +7,10 @@
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 0 20px; background-color: #f4f4f9; }
         h1, h2 { color: #333; }
-        form { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        form, .exercise-manager { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 16px; }
         button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
         button:hover:not(:disabled) { background-color: #218838; }
@@ -21,6 +21,10 @@
         .status-box { background: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; color: #0d47a1; font-weight: bold; display: none; }
         .delete-btn { background: none; border: none; color: #dc3545; cursor: pointer; font-size: 16px; padding: 0; }
         .delete-btn:hover { color: #bd2130; font-weight: bold; }
+        .inline-group { display: flex; gap: 10px; }
+        .inline-group input { flex: 1; }
+        .btn-blue { background-color: #007bff; }
+        .btn-blue:hover { background-color: #0056b3; }
     </style>
 </head>
 <body>
@@ -29,9 +33,26 @@
     
     <div id="statusMessage" class="status-box"></div>
 
+    <!-- Блок добавления новых упражнений в базу -->
+    <div class="exercise-manager">
+        <label>➕ Добавить новое упражнение в список:</label>
+        <div class="inline-group">
+            <input type="text" id="newExerciseName" placeholder="Например: Жим гантелей">
+            <button type="button" class="btn-blue" id="addExerciseBtn">Создать</button>
+        </div>
+    </div>
+
+    <!-- Форма записи тренировки -->
     <form id="workoutForm">
         <div class="form-group"><label>Дата:</label><input type="date" id="date" required></div>
-        <div class="form-group"><label>Упражнение:</label><input type="text" id="exercise" placeholder="Например: Приседания" required></div>
+        
+        <div class="form-group">
+            <label>Выбрать упражнение:</label>
+            <select id="exerciseSelect" required>
+                <option value="" disabled selected>⏳ Загрузка списка...</option>
+            </select>
+        </div>
+        
         <div class="form-group"><label>Вес (кг):</label><input type="number" id="weight" step="0.1" required></div>
         <div class="form-group"><label>Подходы:</label><input type="number" id="sets" required></div>
         <div class="form-group"><label>Повторения:</label><input type="number" id="reps" required></div>
@@ -45,13 +66,15 @@
         </thead>
         <tbody id="workoutLog"></tbody>
     </table>
-
-    <script>
-        // Ваша точная ссылка на Google Веб-приложение без опечаток
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyx1lF_uTsLrlD3HyirKnat11E1ZIBWUVrHnViGjq3Bnt5MI-NII4cHOmop3_lBa5QdcA/exec"; 
+ <script>
+        // Ваша точная ссылка на Google Web App без опечаток
+        const GOOGLE_SCRIPT_URL = "https://google.com"; 
 
         const workoutForm = document.getElementById('workoutForm');
         const workoutLog = document.getElementById('workoutLog');
+        const exerciseSelect = document.getElementById('exerciseSelect');
+        const addExerciseBtn = document.getElementById('addExerciseBtn');
+        const newExerciseName = document.getElementById('newExerciseName');
         const submitBtn = document.getElementById('submitBtn');
         const statusMessage = document.getElementById('statusMessage');
 
@@ -64,29 +87,51 @@
             if(duration) setTimeout(() => statusMessage.style.display = 'none', duration);
         }
 
-        // 1. Получение данных из Google Таблицы
+        // Загрузка всех данных из Google
         async function loadFromGoogle() {
-            showStatus("⏳ Синхронизация с Google Таблицами...", 0);
+            showStatus("⏳ Синхронизация с Google...", 0);
             submitBtn.disabled = true;
+            addExerciseBtn.disabled = true;
             
             try {
                 const response = await fetch(GOOGLE_SCRIPT_URL);
-                workoutsArray = await response.json();
+                const resData = await response.json();
+                
+                workoutsArray = resData.workouts;
                 renderTable();
+                renderExercises(resData.exercises);
+                
                 showStatus("✅ Данные обновлены!");
             } catch (error) {
                 console.error(error);
-                showStatus("❌ Данные в таблице пока отсутствуют. Добавьте первую запись.");
+                showStatus("❌ Ошибка синхронизации. Проверьте настройки.");
             } finally {
                 submitBtn.disabled = false;
+                addExerciseBtn.disabled = false;
             }
         }
 
-        // Отрисовка таблицы на экране
+        // Заполнение выпадающего списка упражнений
+        function renderExercises(exercises) {
+            exerciseSelect.innerHTML = '';
+            if (exercises.length === 0) {
+                exerciseSelect.innerHTML = '<option value="" disabled selected>Список пуст. Добавьте упражнение выше!</option>';
+                return;
+            }
+            
+            exerciseSelect.innerHTML = '<option value="" disabled selected>-- Выберите из списка --</option>';
+            exercises.forEach(ex => {
+                const opt = document.createElement('option');
+                opt.value = ex;
+                opt.innerText = ex;
+                exerciseSelect.appendChild(opt);
+            });
+        }
+
+        // Отрисовка таблицы
         function renderTable() {
             workoutLog.innerHTML = '';
             const sorted = [...workoutsArray].sort((a, b) => new Date(b.date) - new Date(a.date));
-
             sorted.forEach(w => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -101,7 +146,31 @@
             });
         }
 
-        // 2. Добавление новой тренировки
+        // Создание НОВОГО упражнения в списке
+        addExerciseBtn.addEventListener('click', async function() {
+            const name = newExerciseName.value.trim();
+            if (!name) { alert("Введите название упражнения!"); return; }
+            
+            addExerciseBtn.disabled = true;
+            showStatus("📡 Добавление упражнения в базу...", 0);
+            
+            try {
+                await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'add_exercise', name: name })
+                });
+                showStatus("🚀 Упражнение создано!");
+                newExerciseName.value = '';
+                setTimeout(loadFromGoogle, 1500);
+            } catch (error) {
+                showStatus("❌ Ошибка добавления упражнения.");
+                addExerciseBtn.disabled = false;
+            }
+        });
+
+        // Отправка тренировки
         workoutForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             submitBtn.disabled = true;
@@ -110,7 +179,7 @@
             const newWorkout = {
                 action: 'add',
                 date: document.getElementById('date').value,
-                exercise: document.getElementById('exercise').value,
+                exercise: exerciseSelect.value,
                 weight: document.getElementById('weight').value,
                 sets: document.getElementById('sets').value,
                 reps: document.getElementById('reps').value
@@ -123,22 +192,19 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newWorkout)
                 });
-                
                 showStatus("🚀 Успешно добавлено!");
                 workoutForm.reset();
                 document.getElementById('date').valueAsDate = new Date();
-                
-                // Ждем сохранения и обновляем таблицу
                 setTimeout(loadFromGoogle, 1500);
             } catch (error) {
-                showStatus("❌ Ошибка отправки данных.");
+                showStatus("❌ Ошибка отправки.");
                 submitBtn.disabled = false;
             }
         });
 
-        // 3. Удаление строки
+        // Удаление записи
         window.deleteWorkout = async function(rowId) {
-            if (confirm("Вы уверены, что хотите удалить эту строку из Google Таблицы?")) {
+            if (confirm("Вы уверены, что хотите удалить эту строку?")) {
                 showStatus("🗑️ Удаление строки...", 0);
                 try {
                     await fetch(GOOGLE_SCRIPT_URL, {
@@ -155,7 +221,6 @@
             }
         };
 
-        // Запуск
         loadFromGoogle();
     </script>
 </body>
