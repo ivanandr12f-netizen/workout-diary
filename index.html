@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дневник тренировок (GitHub Cloud)</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 0 20px; background-color: #f4f4f9; }
+        h1, h2 { color: #333; }
+        form { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        button:hover:not(:disabled) { background-color: #218838; }
+        table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; margin-top: 15px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #007bff; color: white; }
+        tr:hover { background-color: #f1f1f1; }
+        .status-box { background: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px; color: #0d47a1; font-weight: bold; display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>🏋️‍♂️ Мой дневник тренировок (Авто-сохранение)</h1>
+    
+    <div id="statusMessage" class="status-box"></div>
+
+    <form id="workoutForm">
+        <div class="form-group"><label>Дата:</label><input type="date" id="date" required></div>
+        <div class="form-group"><label>Упражнение:</label><input type="text" id="exercise" placeholder="Например: Становая тяга" required></div>
+        <div class="form-group"><label>Вес (кг):</label><input type="number" id="weight" step="0.1" required></div>
+        <div class="form-group"><label>Подходы:</label><input type="number" id="sets" required></div>
+        <div class="form-group"><label>Повторения:</label><input type="number" id="reps" required></div>
+        <button type="submit" id="submitBtn">Добавить и отправить в облако</button>
+    </form>
+
+    <h2>📋 История тренировок</h2>
+    <table id="workoutTable">
+        <thead>
+            <tr><th>Дата</th><th>Упражнение</th><th>Вес</th><th>Подходы</th><th>Повторения</th></tr>
+        </thead>
+        <tbody id="workoutLog"></tbody>
+    </table>
+
+    <script>
+        // НАСТРОЙКА ДАННЫХ GITHUB
+        const GITHUB_TOKEN = "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"; 
+        const REPO_OWNER = "Dmitriy-Zg";   
+        const REPO_NAME = "fitnes-dnevnik";  
+        const FILE_PATH = "workouts_data.json"; 
+
+        const workoutForm = document.getElementById('workoutForm');
+        const workoutLog = document.getElementById('workoutLog');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusMessage = document.getElementById('statusMessage');
+
+        let currentFileSha = null; 
+        let workoutsArray = [];
+
+        document.getElementById('date').valueAsDate = new Date();
+
+        function showStatus(text, duration = 3000) {
+            statusMessage.innerText = text;
+            statusMessage.style.display = 'block';
+            if(duration) setTimeout(() => statusMessage.style.display = 'none', duration);
+        }
+
+        // Скачивание актуальной базы из GitHub при открытии страницы
+        async function loadFromGitHub() {
+            showStatus("⏳ Синхронизация с GitHub...", 0);
+            submitBtn.disabled = true;
+            
+            const url = `https://github.com{REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
+            
+            try {
+                const response = await fetch(url, {
+                    headers: { "Authorization": `token ${GITHUB_TOKEN}` }
+                });
+                
+                if (response.status === 200) {
+                    const data = await response.json();
+                    currentFileSha = data.sha; 
+                    const utf8String = decodeURIComponent(atob(data.content).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+                    workoutsArray = JSON.parse(utf8String);
+                } else if (response.status === 404) {
+                    workoutsArray = [];
+                    currentFileSha = null;
+                }
+                
+                renderTable();
+                showStatus("✅ Данные синхронизированы!");
+            } catch (error) {
+                console.error(error);
+                showStatus("❌ Ошибка синхронизации. Проверьте правильность токена.");
+            } finally {
+                submitBtn.disabled = false;
+            }
+        }
+
+        // Отрисовка таблицы
+        function renderTable() {
+            workoutLog.innerHTML = '';
+            const sorted = [...workoutsArray].sort((a, b) => new Date(b.date) - new Date(a.date));
+            sorted.forEach(w => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td>${new Date(w.date).toLocaleDateString('ru-RU')}</td><td>${w.exercise}</td><td>${w.weight} кг</td><td>${w.sets}</td><td>${w.reps}</td>`;
+                workoutLog.appendChild(row);
+            });
+        }
+
+        // Отправка обновленной базы обратно на GitHub
+        async function saveToGitHub() {
+            submitBtn.disabled = true;
+            showStatus("📡 Сохранение в облако GitHub...", 0);
+
+            const url = `https://github.com{REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
+            
+            const rawJsonString = JSON.stringify(workoutsArray, null, 2);
+            const base64Content = btoa(encodeURIComponent(rawJsonString).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
+
+            const bodyData = {
+                message: "🏋️‍♂️ Авто-обновление дневника тренировок через веб-интерфейс",
+                content: base64Content
+            };
+
+            if (currentFileSha) {
+                bodyData.sha = currentFileSha;
+            }
+
+            try {
+                const response = await fetch(url, {
+                    method: "PUT",
+                    headers: {
+                        "Authorization": `token ${GITHUB_TOKEN}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(bodyData)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    currentFileSha = result.content.sha; 
+                    showStatus("🚀 Успешно сохранено в ваш репозиторий!");
+                } else {
+                    showStatus("❌ Ошибка при отправке коммита.");
+                }
+            } catch (error) {
+                console.error(error);
+                showStatus("❌ Сетевая ошибка сохранения.");
+            } finally {
+                submitBtn.disabled = false;
+            }
+        }
+
+        // Обработчик формы
+        workoutForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const newWorkout = {
+                date: document.getElementById('date').value,
+                exercise: document.getElementById('exercise').value,
+                weight: document.getElementById('weight').value,
+                sets: document.getElementById('sets').value,
+                reps: document.getElementById('reps').value
+            };
+
+            workoutsArray.push(newWorkout);
+            renderTable();
+            
+            workoutForm.reset();
+            document.getElementById('date').valueAsDate = new Date();
+
+            await saveToGitHub();
+        });
+
+        // Запуск при старте страницы
+        loadFromGitHub();
+    </script>
+</body>
+</html>
