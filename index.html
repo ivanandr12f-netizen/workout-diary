@@ -107,7 +107,7 @@
             <div class="sets-management">
                 <button type="button" class="btn-blue btn-sm" id="addSetBtn">＋ Добавить подход</button>
                 <button type="button" class="btn-danger btn-sm" id="removeSetBtn">－ Удалить подход</button>
-                <button type="button" class="btn-orange btn-sm" id="lockWeightBtn">🔒 Синхронизировать вес</button>
+                <button type="button" class="btn-orange btn-sm" id="lockWeightBtn">🔒 Залочить вес</button>
             </div>
         </div>
 
@@ -215,7 +215,7 @@
     lockWeightBtn.addEventListener('click', function() {
         isWeightLocked = !isWeightLocked;
         if (isWeightLocked) {
-            this.innerText = "🔓 Разблокировать вес";
+            this.innerText = "🔓 Разлочить вес";
             this.classList.add('active');
             const allWeightInputs = weightRow.querySelectorAll('input');
             if(allWeightInputs.length > 0) {
@@ -223,7 +223,7 @@
                 allWeightInputs.forEach(inp => inp.value = firstValue);
             }
         } else {
-            this.innerText = "🔒 Синхронизировать вес";
+            this.innerText = "🔒 Залочить вес";
             this.classList.remove('active');
         }
     });
