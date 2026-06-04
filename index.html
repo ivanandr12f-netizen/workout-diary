@@ -25,15 +25,27 @@
         .inline-group input { flex: 1; }
         .btn-blue { background-color: #007bff; }
         .btn-blue:hover { background-color: #0056b3; }
+        
+        /* Стили для таблицы подходов */
+        .sets-table { width: 100%; margin-top: 10px; box-shadow: none; border: 1px solid #ddd; }
+        .sets-table th, .sets-table td { text-align: center; padding: 8px; border: 1px solid #ddd; }
+        .sets-table th { background-color: #f8f9fa; color: #333; font-size: 14px; }
+        .cell-container { position: relative; display: flex; flex-direction: column; align-items: center; }
+        .sets-table input { text-align: center; padding: 6px; font-size: 16px; width: 100%; box-sizing: border-box; }
+        .history-hint { font-size: 11px; color: #888; margin-top: 3px; font-weight: normal; }
+        .sets-management { margin-top: 10px; display: flex; gap: 10px; }
+        .btn-sm { padding: 5px 10px; font-size: 14px; }
+        .btn-orange { background-color: #ffc107; color: #212529; }
+        .btn-orange.active { background-color: #dc3545; color: white; }
+        .btn-danger { background-color: #dc3545; }
     </style>
 </head>
 <body>
 
-    <h1>🏋️‍♂️ Мой дневник тренировок (Google Cloud)</h1>
+    <h1>🏋️‍♂️ Мой дневник тренировок</h1>
     
     <div id="statusMessage" class="status-box"></div>
 
-    <!-- Блок добавления новых упражнений в базу -->
     <div class="exercise-manager">
         <label>➕ Добавить новое упражнение в список:</label>
         <div class="inline-group">
@@ -42,7 +54,6 @@
         </div>
     </div>
 
-    <!-- Форма записи тренировки -->
     <form id="workoutForm">
         <div class="form-group"><label>Дата:</label><input type="date" id="date" required></div>
         
@@ -53,22 +64,43 @@
             </select>
         </div>
         
-        <div class="form-group"><label>Вес (кг):</label><input type="number" id="weight" step="0.1" required></div>
-        <div class="form-group"><label>Подходы:</label><input type="number" id="sets" required></div>
-        <div class="form-group"><label>Повторения:</label><input type="number" id="reps" required></div>
+        <div class="form-group">
+            <label>Показатели подходов:</label>
+            <table class="sets-table">
+                <thead>
+                    <tr id="setsHeaderRow">
+                        <th style="background-color: #eee; width: 80px;">Тип</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr id="weightRow">
+                        <td style="font-weight: bold;">Вес (кг)</td>
+                    </tr>
+                    <tr id="repsRow">
+                        <td style="font-weight: bold;">Повторы</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="sets-management">
+                <button type="button" class="btn-blue btn-sm" id="addSetBtn">＋ Добавить подход</button>
+                <button type="button" class="btn-danger btn-sm" id="removeSetBtn">－ Удалить подход</button>
+                <button type="button" class="btn-orange btn-sm" id="lockWeightBtn">🔒 Синхронизировать вес</button>
+            </div>
+        </div>
+
         <button type="submit" id="submitBtn">Добавить в Google Таблицу</button>
     </form>
 
     <h2>📋 История тренировок</h2>
     <table id="workoutTable">
         <thead>
-            <tr><th>Дата</th><th>Упражнение</th><th>Вес</th><th>Подходы</th><th>Повторения</th><th>Удалить</th></tr>
+            <tr><th>Дата</th><th>Упражнение</th><th>Вес по подходам</th><th>Повторы по подходам</th><th>Удалить</th></tr>
         </thead>
         <tbody id="workoutLog"></tbody>
     </table>
- <script>
-    // Поменяйте эту ссылку на вашу реальную ссылку Web App (должна заканчиваться на /exec)
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxlH0jU5c9CD8-wD5QWK9nCc15bnXV5Rn9AzO98VRhvULYRbT_nB-HINZmoP3NtVUq7QA/exec"; 
+<script>
+    const GOOGLE_SCRIPT_URL = "https://google.com"; 
 
     const workoutForm = document.getElementById('workoutForm');
     const workoutLog = document.getElementById('workoutLog');
@@ -77,8 +109,18 @@
     const newExerciseName = document.getElementById('newExerciseName');
     const submitBtn = document.getElementById('submitBtn');
     const statusMessage = document.getElementById('statusMessage');
+    
+    const setsHeaderRow = document.getElementById('setsHeaderRow');
+    const weightRow = document.getElementById('weightRow');
+    const repsRow = document.getElementById('repsRow');
+    const addSetBtn = document.getElementById('addSetBtn');
+    const removeSetBtn = document.getElementById('removeSetBtn');
+    const lockWeightBtn = document.getElementById('lockWeightBtn');
 
     let workoutsArray = [];
+    let currentSetsCount = 4; 
+    let isWeightLocked = false; 
+
     document.getElementById('date').valueAsDate = new Date();
 
     function showStatus(text, duration = 3000) {
@@ -87,7 +129,105 @@
         if(duration) setTimeout(() => statusMessage.style.display = 'none', duration);
     }
 
-    // 1. Загрузка всех данных из Google
+    function buildSetsTable(historyWeights = [], historyReps = []) {
+        while (setsHeaderRow.children.length > 1) setsHeaderRow.removeChild(setsHeaderRow.lastChild);
+        while (weightRow.children.length > 1) weightRow.removeChild(weightRow.lastChild);
+        while (repsRow.children.length > 1) repsRow.removeChild(repsRow.lastChild);
+
+        for (let i = 0; i < currentSetsCount; i++) {
+            const th = document.createElement('th');
+            th.innerText = `${i + 1} п.`;
+            setsHeaderRow.appendChild(th);
+
+            const tdWeight = document.createElement('td');
+            const containerW = document.createElement('div');
+            containerW.className = 'cell-container';
+            const inputW = document.createElement('input');
+            inputW.type = 'number';
+            inputW.step = '0.1';
+            inputW.required = true;
+            inputW.dataset.index = i;
+            inputW.placeholder = "0";
+            
+            inputW.addEventListener('input', function() {
+                if (isWeightLocked && this.dataset.index === '0') {
+                    const allWeightInputs = weightRow.querySelectorAll('input');
+                    allWeightInputs.forEach(inp => inp.value = this.value);
+                }
+            });
+
+            containerW.appendChild(inputW);
+            
+            if (historyWeights[i] !== undefined) {
+                const hintW = document.createElement('div');
+                hintW.className = 'history-hint';
+                hintW.innerText = `было: ${historyWeights[i]}`;
+                containerW.appendChild(hintW);
+            }
+            tdWeight.appendChild(containerW);
+            weightRow.appendChild(tdWeight);
+
+            const tdReps = document.createElement('td');
+            const containerR = document.createElement('div');
+            containerR.className = 'cell-container';
+            const inputR = document.createElement('input');
+            inputR.type = 'number';
+            inputR.required = true;
+            inputR.placeholder = "0";
+            containerR.appendChild(inputR);
+
+            if (historyReps[i] !== undefined) {
+                const hintR = document.createElement('div');
+                hintR.className = 'history-hint';
+                hintR.innerText = `было: ${historyReps[i]}`;
+                containerR.appendChild(hintR);
+            }
+            tdReps.appendChild(containerR);
+            repsRow.appendChild(tdReps);
+        }
+    }
+
+    lockWeightBtn.addEventListener('click', function() {
+        isWeightLocked = !isWeightLocked;
+        if (isWeightLocked) {
+            this.innerText = "🔓 Разблокировать вес";
+            this.classList.add('active');
+            const allWeightInputs = weightRow.querySelectorAll('input');
+            if(allWeightInputs.length > 0) {
+                const firstValue = allWeightInputs[0].value;
+                allWeightInputs.forEach(inp => inp.value = firstValue);
+            }
+        } else {
+            this.innerText = "🔒 Синхронизировать вес";
+            this.classList.remove('active');
+        }
+    });
+
+    addSetBtn.addEventListener('click', () => { currentSetsCount++; updateHints(); });
+    removeSetBtn.addEventListener('click', () => { if(currentSetsCount > 1) { currentSetsCount--; updateHints(); } });
+
+    function updateHints() {
+        const selectedExercise = exerciseSelect.value;
+        if (!selectedExercise) {
+            buildSetsTable();
+            return;
+        }
+
+        const exerciseHistory = workoutsArray
+            .filter(w => w.exercise === selectedExercise)
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        if (exerciseHistory.length > 0) {
+            const lastWorkout = exerciseHistory[0];
+            const weights = lastWorkout.weights ? String(lastWorkout.weights).split(',') : [];
+            const reps = lastWorkout.reps ? String(lastWorkout.reps).split(',') : [];
+            buildSetsTable(weights, reps);
+        } else {
+            buildSetsTable();
+        }
+    }
+
+    exerciseSelect.addEventListener('change', updateHints);
     async function loadFromGoogle() {
         showStatus("⏳ Синхронизация с Google...", 0);
         submitBtn.disabled = true;
@@ -95,43 +235,36 @@
         
         try {
             const response = await fetch(GOOGLE_SCRIPT_URL);
-            if (!response.ok) throw new Error("Ошибка сервера");
-            
+            if (!response.ok) throw new Error();
             const resData = await response.json();
             
             workoutsArray = resData.workouts || [];
             renderTable();
             renderExercises(resData.exercises || []);
-            
             showStatus("✅ Данные обновлены!");
         } catch (error) {
-            console.error("Ошибка загрузки:", error);
-            showStatus("❌ Ошибка синхронизации. Проверьте адрес скрипта или доступ.");
-            exerciseSelect.innerHTML = '<option value="" disabled selected>❌ Ошибка загрузки списка</option>';
+            showStatus("❌ Ошибка синхронизации.");
+            exerciseSelect.innerHTML = '<option value="" disabled selected>❌ Ошибка загрузки</option>';
         } finally {
             submitBtn.disabled = false;
             addExerciseBtn.disabled = false;
         }
     }
 
-    // 2. Заполнение выпадающего списка упражнений
     function renderExercises(exercises) {
         exerciseSelect.innerHTML = '';
         if (exercises.length === 0) {
-            exerciseSelect.innerHTML = '<option value="" disabled selected>Список пуст. Добавьте упражнение выше!</option>';
+            exerciseSelect.innerHTML = '<option value="" disabled selected>Список пуст.</option>';
             return;
         }
-        
         exerciseSelect.innerHTML = '<option value="" disabled selected>-- Выберите из списка --</option>';
         exercises.forEach(ex => {
             const opt = document.createElement('option');
-            opt.value = ex;
-            opt.innerText = ex;
+            opt.value = ex; opt.innerText = ex;
             exerciseSelect.appendChild(opt);
         });
     }
 
-    // 3. Отрисовка таблицы истории
     function renderTable() {
         workoutLog.innerHTML = '';
         const sorted = [...workoutsArray].sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -140,92 +273,73 @@
             row.innerHTML = `
                 <td>${w.date ? new Date(w.date).toLocaleDateString('ru-RU') : '—'}</td>
                 <td>${w.exercise}</td>
-                <td>${w.weight} кг</td>
-                <td>${w.sets}</td>
-                <td>${w.reps}</td>
+                <td>${w.weights ? String(w.weights).split(',').join(' | ') : '—'}</td>
+                <td>${w.reps ? String(w.reps).split(',').join(' | ') : '—'}</td>
                 <td><button class="delete-btn" onclick="deleteWorkout(${w.rowId})">❌</button></td>
             `;
             workoutLog.appendChild(row);
         });
     }
 
-    // 4. Создание НОВОГО упражнения в списке
     addExerciseBtn.addEventListener('click', async function() {
         const name = newExerciseName.value.trim();
-        if (!name) { alert("Введите название упражнения!"); return; }
-        
+        if (!name) return;
         addExerciseBtn.disabled = true;
-        showStatus("📡 Добавление упражнения в базу...", 0);
-        
         try {
-            // Отправляем как текст, чтобы обойти CORS-блокировку браузера
-            await fetch(GOOGLE_SCRIPT_URL, {
-                method: 'POST',
-                body: JSON.stringify({ action: 'add_exercise', name: name })
-            });
-            showStatus("🚀 Упражнение создано!");
+            await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'add_exercise', name: name }) });
             newExerciseName.value = '';
-            await loadFromGoogle(); // Сразу обновляем список упражнений
-        } catch (error) {
-            showStatus("❌ Ошибка добавления упражнения.");
-            addExerciseBtn.disabled = false;
-        }
+            await loadFromGoogle();
+        } catch (error) { showStatus("❌ Ошибка"); addExerciseBtn.disabled = false; }
     });
 
-    // 5. Отправка тренировки
     workoutForm.addEventListener('submit', async function(e) {
         e.preventDefault();
-        
-        if (!exerciseSelect.value) {
-            alert("Пожалуйста, выберите упражнение из списка!");
-            return;
-        }
+        if (!exerciseSelect.value) return;
 
         submitBtn.disabled = true;
-        showStatus("📡 Отправка записи в Google...", 0);
+        showStatus("📡 Отправка...", 0);
+
+        const weightInputs = weightRow.querySelectorAll('input');
+        const repsInputs = repsRow.querySelectorAll('input');
+        
+        let weightsArray = [];
+        let repsArray = [];
+
+        for (let i = 0; i < currentSetsCount; i++) {
+            weightsArray.push(weightInputs[i].value);
+            repsArray.push(repsInputs[i].value);
+        }
 
         const newWorkout = {
             action: 'add',
             date: document.getElementById('date').value,
             exercise: exerciseSelect.value,
-            weight: document.getElementById('weight').value,
-            sets: document.getElementById('sets').value,
-            reps: document.getElementById('reps').value
+            weights: weightsArray.join(','), 
+            reps: repsArray.join(',')        
         };
 
         try {
-            await fetch(GOOGLE_SCRIPT_URL, {
-                method: 'POST',
-                body: JSON.stringify(newWorkout)
-            });
+            await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', body: JSON.stringify(newWorkout) });
             showStatus("🚀 Успешно добавлено!");
             workoutForm.reset();
             document.getElementById('date').valueAsDate = new Date();
-            await loadFromGoogle(); // Обновляем таблицу
-        } catch (error) {
-            showStatus("❌ Ошибка отправки.");
-            submitBtn.disabled = false;
-        }
+            isWeightLocked = false;
+            lockWeightBtn.innerText = "🔒 Синхронизировать вес";
+            lockWeightBtn.classList.remove('active');
+            await loadFromGoogle();
+        } catch (error) { showStatus("❌ Ошибка"); submitBtn.disabled = false; }
     });
 
-    // 6. Удаление записи
     window.deleteWorkout = async function(rowId) {
-        if (confirm("Вы уверены, что хотите удалить эту строку?")) {
-            showStatus("🗑️ Удаление строки...", 0);
+        if (confirm("Удалить строку?")) {
             try {
-                await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'delete', rowId: rowId })
-                });
-                showStatus("✅ Запись удалена!");
-                await loadFromGoogle(); // Перерисовываем таблицу с новыми ID строк
-            } catch (error) {
-                showStatus("❌ Ошибка удаления.");
-            }
+                await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete', rowId: rowId }) });
+                await loadFromGoogle();
+            } catch (error) { showStatus("❌ Ошибка"); }
         }
     };
 
-    // Запуск приложения
+    buildSetsTable();
     loadFromGoogle();
 </script>
 </body>
